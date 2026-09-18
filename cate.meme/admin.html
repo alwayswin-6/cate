@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>CATECOIN Admin</title>
+<style>
+:root{color-scheme:dark;--bg:#08070b;--panel:#121019;--line:rgba(242,185,46,.24);--text:#f4ede0;--muted:#9a8fa0;--gold:#f2b92e;--red:#ff8068;--ui:"Space Grotesk",system-ui,sans-serif;--mono:"Space Mono",ui-monospace,monospace}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0%,#2a1d12 0,#08070b 42%);color:var(--text);font-family:var(--ui);padding:clamp(1rem,4vw,4rem)}main{max-width:1500px;margin:auto}.eyebrow{font:11px var(--mono);letter-spacing:.25em;text-transform:uppercase;color:var(--gold)}h1{font:600 clamp(2rem,4vw,3.6rem) Georgia,serif;margin:.6rem 0 1rem}p{color:var(--muted)}.panel{background:rgba(18,16,25,.9);border:1px solid var(--line);padding:clamp(1.2rem,3vw,2rem);box-shadow:0 24px 70px #0008}.login{max-width:430px;margin:12vh auto}.field{display:grid;gap:.45rem;margin:1.2rem 0}label{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}input{width:100%;border:1px solid #55482c;background:#0b0a10;color:var(--text);padding:.85rem;font:1rem var(--ui)}button{border:1px solid var(--gold);background:var(--gold);color:#17120a;padding:.8rem 1.2rem;font-weight:700;cursor:pointer}button:hover{filter:brightness(1.12)}button.danger{border-color:var(--red);background:transparent;color:var(--red);padding:.5rem .7rem;font-size:.78rem}.error{min-height:1.5em;color:var(--red);font-size:.9rem}.bar{display:flex;justify-content:space-between;align-items:end;gap:1rem;margin-bottom:1.5rem}.bar__actions{display:flex;gap:.6rem}.bar button{background:transparent;color:var(--text);border-color:#6d6045}.meta{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin-bottom:1rem}.note{font-size:.8rem;margin:0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1100px}th,td{text-align:left;border-bottom:1px solid #2b2630;padding:.95rem .85rem;vertical-align:top}th{font:10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}td{font-size:.9rem}td small{color:var(--muted)}.empty{text-align:center;padding:3rem;color:var(--muted)}[hidden]{display:none!important}@media(max-width:650px){.bar{align-items:start;flex-direction:column}.bar__actions{width:100%}.bar button{flex:1}}
+</style>
+</head>
+<body>
+<main>
+  <section class="panel login" id="loginPanel">
+    <span class="eyebrow">Restricted area</span><h1>Administrator access</h1>
+    <p>Sign in to view locally recorded visitor entries.</p>
+    <form id="loginForm"><div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required></div><button type="submit">Sign in</button><div class="error" id="loginError" role="alert"></div></form>
+  </section>
+  <section id="adminPanel" hidden>
+    <div class="bar"><div><span class="eyebrow">Operations</span><h1>User management</h1></div><div class="bar__actions"><button id="refresh" type="button">Refresh</button><button id="logout" type="button">Sign out</button></div></div>
+    <div class="panel"><div class="meta"><p class="note">Records are loaded from the server. Static previews use this browser's local storage as a fallback.</p><strong id="count">0 users</strong></div><div class="table-wrap"><table><thead><tr><th>IP address</th><th>Country</th><th>VPN / proxy</th><th>Browser</th><th>Device</th><th>Last seen</th><th>Action</th></tr></thead><tbody id="users"></tbody></table><div class="empty" id="empty">No visitor records are available.</div></div></div>
+  </section>
+</main>
+<script>
+(function(){
+  'use strict';
+  var KEY='cate-admin-users',AUTH='cate-admin-auth';
+  var PASSWORD_HASH='4cd4e0d10f5c2d1ef52690bdde220796773ce9e4b26358eeef908481f161db2b',PREVIEW_HASH='92709905';
+  var loginPanel=document.getElementById('loginPanel'),adminPanel=document.getElementById('adminPanel'),form=document.getElementById('loginForm'),error=document.getElementById('loginError'),body=document.getElementById('users'),token=sessionStorage.getItem('cate-admin-token')||'';
+  function escapeHtml(value){return String(value==null?'':value).replace(/[&<>"']/g,function(char){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];});}
+  function users(){try{return JSON.parse(localStorage.getItem(KEY)||'[]');}catch(e){return [];}}
+  function hash(value){if(typeof crypto!=='undefined'&&crypto.subtle)return crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)).then(function(bytes){return Array.from(new Uint8Array(bytes)).map(function(byte){return byte.toString(16).padStart(2,'0');}).join('');});var result=5381;for(var index=0;index<value.length;index++)result=((result<<5)-result)^value.charCodeAt(index);return Promise.resolve((result>>>0).toString(16).padStart(8,'0'));}
+  function render(){var records=users();document.getElementById('count').textContent=records.length+' user'+(records.length===1?'':'s');document.getElementById('empty').hidden=records.length>0;body.innerHTML=records.map(function(user){return '<tr><td>'+escapeHtml(user.ip)+'</td><td>'+escapeHtml(user.country)+'</td><td>'+escapeHtml(user.vpn||'Unknown')+'</td><td>'+escapeHtml(user.browser)+'</td><td>'+escapeHtml(user.device)+'</td><td><small>'+escapeHtml(new Date(user.lastSeen).toLocaleString())+'</small></td><td><button class="danger" type="button" data-id="'+escapeHtml(user.id)+'">Delete</button></td></tr>';}).join('');}
+  function loadRemote(){if(!token||typeof fetch!=='function')return;fetch('/api/visitors',{headers:{Authorization:'Bearer '+token},cache:'no-store'}).then(function(response){if(!response.ok)throw new Error(response.status);return response.json();}).then(function(records){localStorage.setItem(KEY,JSON.stringify(records));render();}).catch(function(){});}
+  function showAdmin(){loginPanel.hidden=true;adminPanel.hidden=false;render();loadRemote();}
+  form.addEventListener('submit',function(event){event.preventDefault();var password=document.getElementById('password').value;if(typeof fetch==='function'){fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:password}),cache:'no-store'}).then(function(response){if(!response.ok)throw new Error('login');return response.json();}).then(function(data){token=data.token;sessionStorage.setItem('cate-admin-token',token);sessionStorage.setItem(AUTH,'1');showAdmin();}).catch(function(){var expected=typeof crypto!=='undefined'&&crypto.subtle?PASSWORD_HASH:PREVIEW_HASH;hash(password).then(function(value){if(value===expected){sessionStorage.setItem(AUTH,'1');showAdmin();}else{error.textContent='Incorrect password.';}});});}else{error.textContent='Administrator login is unavailable.';}});
+  document.getElementById('logout').addEventListener('click',function(){sessionStorage.removeItem(AUTH);sessionStorage.removeItem('cate-admin-token');location.reload();});
+  document.getElementById('refresh').addEventListener('click',render);
+  body.addEventListener('click',function(event){var button=event.target.closest('button[data-id]');if(!button)return;var id=button.getAttribute('data-id');if(token&&typeof fetch==='function'){fetch('/api/visitors/'+encodeURIComponent(id),{method:'DELETE',headers:{Authorization:'Bearer '+token},cache:'no-store'}).then(function(){loadRemote();});}else{var remaining=users().filter(function(user){return user.id!==id;});localStorage.setItem(KEY,JSON.stringify(remaining));render();}});
+  if(sessionStorage.getItem(AUTH)==='1')showAdmin();
+  if(typeof fetch==='function'){fetch('/api/keep-alive?source=admin&t='+Date.now(),{cache:'no-store',keepalive:true}).catch(function(){});setInterval(function(){fetch('/api/keep-alive?source=admin&t='+Date.now(),{cache:'no-store',keepalive:true}).catch(function(){});},300000);}
+})();
+</script>
+</body>
+</html>
